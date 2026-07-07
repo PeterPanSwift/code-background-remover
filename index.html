@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>程式碼去背工具</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "PingFang TC", "Helvetica Neue", Arial, sans-serif;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px;
+    background: #f5f6f8;
+    color: #222;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .hint { color: #666; font-size: 14px; margin-top: 0; }
+  .panel {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 8px; color: #444; }
+  #input, #output {
+    min-height: 160px;
+    border: 2px dashed #bbb;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    outline: none;
+  }
+  #input:focus { border-color: #4a90d9; }
+  #input { background: #1e1e1e; color: #ddd; } /* 讓深色主題的程式碼貼上後看得清楚 */
+  #input:empty::before {
+    content: attr(data-placeholder);
+    color: #888;
+  }
+  #output { background: #fff; border-style: solid; color: #24292f; }
+  #output:empty::before { content: attr(data-placeholder); color: #aaa; }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; }
+  #langBtn {
+    background: #fff;
+    border: 1px solid #ccc;
+    color: #374151;
+    font-size: 13px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  #langBtn:hover { background: #f3f4f6; }
+  .buttons { margin-top: 16px; display: flex; gap: 12px; }
+  button {
+    font-size: 15px;
+    padding: 10px 22px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  #convertBtn { background: #2563eb; color: #fff; }
+  #convertBtn:hover { background: #1d4ed8; }
+  #copyBtn { background: #059669; color: #fff; }
+  #copyBtn:hover { background: #047857; }
+  #clearBtn { background: #e5e7eb; color: #374151; }
+  #clearBtn:hover { background: #d1d5db; }
+  #status { font-size: 14px; color: #059669; align-self: center; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1 data-i18n="title">程式碼去背工具</h1>
+  <button id="langBtn"></button>
+</div>
+<p class="hint" data-i18n="hint">從 VS Code 複製程式碼 → 貼到下方 → 按「轉換」→ 按「複製結果」→ 貼到投影片。背景會被移除，太亮的顏色會自動加深，適合白色背景。</p>
+
+<div class="panel">
+  <h2 data-i18n="step1">1. 貼上程式碼（保留格式）</h2>
+  <div id="input" contenteditable="true"></div>
+</div>
+
+<div class="buttons">
+  <button id="convertBtn" data-i18n="convert">轉換成白底配色</button>
+  <button id="copyBtn" data-i18n="copy">複製結果</button>
+  <button id="clearBtn" data-i18n="clear">清除</button>
+  <span id="status"></span>
+</div>
+
+<div class="panel">
+  <h2 data-i18n="step2">2. 轉換結果（白色背景預覽）</h2>
+  <div id="output"></div>
+</div>
+
+<script>
+const input = document.getElementById('input');
+const output = document.getElementById('output');
+const status = document.getElementById('status');
+
+/* ---------- 語言 / Language ---------- */
+
+const I18N = {
+  en: {
+    title: 'Code Background Remover',
+    hint: 'Copy code from VS Code → paste below → click "Convert" → click "Copy result" → paste into your slides. The background is removed and bright colors are darkened for a white background.',
+    step1: '1. Paste your code (formatting preserved)',
+    step2: '2. Result (white background preview)',
+    convert: 'Convert for white background',
+    copy: 'Copy result',
+    clear: 'Clear',
+    inputPlaceholder: 'Press ⌘V here to paste code copied from VS Code…',
+    outputPlaceholder: 'The converted result will appear here',
+    pasteFirst: 'Please paste some code first',
+    converted: 'Converted ✓',
+    nothingToCopy: 'Nothing to copy',
+    copied: 'Copied — ready to paste into your slides ✓',
+    copyFailed: 'Copy failed — please select and copy manually',
+    langBtn: '中文',
+    docTitle: 'Code Background Remover',
+  },
+  zh: {
+    title: '程式碼去背工具',
+    hint: '從 VS Code 複製程式碼 → 貼到下方 → 按「轉換」→ 按「複製結果」→ 貼到投影片。背景會被移除，太亮的顏色會自動加深，適合白色背景。',
+    step1: '1. 貼上程式碼（保留格式）',
+    step2: '2. 轉換結果（白色背景預覽）',
+    convert: '轉換成白底配色',
+    copy: '複製結果',
+    clear: '清除',
+    inputPlaceholder: '在這裡按 ⌘V 貼上從 VS Code 複製的程式碼…',
+    outputPlaceholder: '轉換結果會顯示在這裡',
+    pasteFirst: '請先貼上程式碼',
+    converted: '轉換完成 ✓',
+    nothingToCopy: '沒有可複製的內容',
+    copied: '已複製，可以貼到投影片了 ✓',
+    copyFailed: '複製失敗，請手動選取複製',
+    langBtn: 'English',
+    docTitle: '程式碼去背工具',
+  },
+};
+
+// 系統語言是中文才預設中文，否則英文 / Default to English unless the system is Chinese
+let lang = /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
+
+function t(key) {
+  return I18N[lang][key];
+}
+
+function applyLang() {
+  document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
+  document.title = t('docTitle');
+  for (const el of document.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  input.dataset.placeholder = t('inputPlaceholder');
+  output.dataset.placeholder = t('outputPlaceholder');
+  document.getElementById('langBtn').textContent = t('langBtn');
+}
+
+document.getElementById('langBtn').addEventListener('click', () => {
+  lang = lang === 'zh' ? 'en' : 'zh';
+  applyLang();
+});
+applyLang();
+
+function showStatus(msg) {
+  status.textContent = msg;
+  clearTimeout(showStatus._t);
+  showStatus._t = setTimeout(() => (status.textContent = ''), 2500);
+}
+
+/* ---------- 顏色處理 ---------- */
+
+function parseColor(str) {
+  if (!str) return null;
+  str = str.trim();
+  let m = str.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (m) return [+m[1], +m[2], +m[3]];
+  m = str.match(/^#([0-9a-f]{6})$/i);
+  if (m) {
+    const n = parseInt(m[1], 16);
+    return [n >> 16 & 255, n >> 8 & 255, n & 255];
+  }
+  m = str.match(/^#([0-9a-f]{3})$/i);
+  if (m) return [...m[1]].map(c => parseInt(c + c, 16));
+  return null;
+}
+
+function rgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h, s, l];
+}
+
+function hslToRgb([h, s, l]) {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const f = t => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [f(h + 1 / 3), f(h), f(h - 1 / 3)].map(v => Math.round(v * 255));
+}
+
+// WCAG 相對亮度，用來確保和白底的對比度夠
+function luminance([r, g, b]) {
+  const f = v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+function contrastWithWhite(rgb) {
+  return 1.05 / (luminance(rgb) + 0.05);
+}
+
+// 保留色相，逐步降低亮度並提高飽和度，直到白底對比 >= 4.5
+function adaptForWhiteBg(rgb) {
+  let [h, s, l] = rgbToHsl(rgb);
+  // 白色、灰色、近白的淡色（深色主題的預設文字）→ 直接變純黑
+  if (s < 0.15 || (l > 0.82 && s < 0.45)) return '#000000';
+  s = Math.min(1, s + 0.25); // 有色彩的加深飽和度，白底上更鮮明
+  let out = hslToRgb([h, s, l]);
+  while (contrastWithWhite(out) < 4.5 && l > 0) {
+    l = Math.max(0, l - 0.02);
+    out = hslToRgb([h, s, l]);
+  }
+  return `rgb(${out[0]}, ${out[1]}, ${out[2]})`;
+}
+
+// 把 { } ( ) [ ] 全部改成黑色：把文字節點中的括號字元切出來包進黑色 span
+function blackenBrackets(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const targets = [];
+  while (walker.nextNode()) {
+    if (/[{}()\[\]]/.test(walker.currentNode.nodeValue)) targets.push(walker.currentNode);
+  }
+  for (const node of targets) {
+    const frag = document.createDocumentFragment();
+    for (const part of node.nodeValue.split(/([{}()\[\]]+)/)) {
+      if (!part) continue;
+      if (/^[{}()\[\]]+$/.test(part)) {
+        const span = document.createElement('span');
+        span.style.color = '#000000';
+        span.textContent = part;
+        frag.appendChild(span);
+      } else {
+        frag.appendChild(document.createTextNode(part));
+      }
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+}
+
+/* ---------- 轉換 ---------- */
+
+function convert() {
+  if (!input.innerHTML.trim()) {
+    showStatus(t('pasteFirst'));
+    return;
+  }
+  const work = document.createElement('div');
+  work.innerHTML = input.innerHTML;
+
+  const all = [work, ...work.querySelectorAll('*')];
+  for (const el of all) {
+    if (!el.style) continue;
+    // 移除所有背景相關樣式
+    el.style.removeProperty('background');
+    el.style.removeProperty('background-color');
+    el.style.removeProperty('background-image');
+    if (el.getAttribute('bgcolor')) el.removeAttribute('bgcolor');
+    // 顏色轉換成適合白底
+    const rgb = parseColor(el.style.color);
+    if (rgb) el.style.color = adaptForWhiteBg(rgb);
+  }
+  blackenBrackets(work);
+
+  // 沒有指定顏色的文字給預設深色（VS Code 深色主題的預設前景通常設定在最外層，
+  // 若遺失就補上）
+  if (!work.style.color) work.style.color = '#24292f';
+
+  output.innerHTML = work.innerHTML;
+  output.style.color = work.style.color;
+  showStatus(t('converted'));
+}
+
+/* ---------- 複製 ---------- */
+
+async function copyResult() {
+  if (!output.innerHTML.trim()) {
+    showStatus(t('nothingToCopy'));
+    return;
+  }
+  const html =
+    `<div style="font-family:Menlo,Consolas,monospace;white-space:pre-wrap;color:${output.style.color || '#24292f'}">` +
+    output.innerHTML +
+    `</div>`;
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([output.innerText], { type: 'text/plain' }),
+      }),
+    ]);
+    showStatus(t('copied'));
+  } catch (e) {
+    // 後備方案：選取輸出區塊再用 execCommand 複製
+    const range = document.createRange();
+    range.selectNodeContents(output);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const ok = document.execCommand('copy');
+    sel.removeAllRanges();
+    showStatus(ok ? t('copied') : t('copyFailed'));
+  }
+}
+
+document.getElementById('convertBtn').addEventListener('click', convert);
+document.getElementById('copyBtn').addEventListener('click', copyResult);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  input.innerHTML = '';
+  output.innerHTML = '';
+  status.textContent = '';
+});
+</script>
+
+</body>
+</html>
