@@ -43,6 +43,33 @@
   }
   #output { background: #fff; border-style: solid; color: #24292f; }
   #output:empty::before { content: attr(data-placeholder); color: #aaa; }
+  .hl-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #555;
+  }
+  .swatch {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+  }
+  .swatch:hover { transform: scale(1.15); border-color: rgba(0, 0, 0, 0.35); }
+  #hlRemoveBtn {
+    background: #e5e7eb;
+    color: #374151;
+    font-size: 13px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  #hlRemoveBtn:hover { background: #d1d5db; }
   .topbar { display: flex; justify-content: space-between; align-items: flex-start; }
   #langBtn {
     background: #fff;
@@ -95,7 +122,15 @@
 
 <div class="panel">
   <h2 data-i18n="step2">2. 轉換結果（白色背景預覽）</h2>
-  <div id="output"></div>
+  <div class="hl-bar">
+    <span data-i18n="hlLabel">標注：選取下方程式碼，再點顏色</span>
+    <button class="swatch" data-color="#ffe95e" style="background:#ffe95e" title="Yellow"></button>
+    <button class="swatch" data-color="#b6f2b6" style="background:#b6f2b6" title="Green"></button>
+    <button class="swatch" data-color="#bfe5ff" style="background:#bfe5ff" title="Blue"></button>
+    <button class="swatch" data-color="#ffd0e0" style="background:#ffd0e0" title="Pink"></button>
+    <button id="hlRemoveBtn" data-i18n="hlRemove">移除標注</button>
+  </div>
+  <div id="output" contenteditable="true" spellcheck="false"></div>
 </div>
 
 <script>
@@ -121,6 +156,9 @@ const I18N = {
     nothingToCopy: 'Nothing to copy',
     copied: 'Copied — ready to paste into your slides ✓',
     copyFailed: 'Copy failed — please select and copy manually',
+    hlLabel: 'Highlight: select code below, then click a color',
+    hlRemove: 'Remove highlight',
+    hlSelectFirst: 'Select some code in the result first',
     langBtn: '中文',
     docTitle: 'Code Background Remover',
   },
@@ -139,6 +177,9 @@ const I18N = {
     nothingToCopy: '沒有可複製的內容',
     copied: '已複製，可以貼到投影片了 ✓',
     copyFailed: '複製失敗，請手動選取複製',
+    hlLabel: '標注：選取下方程式碼，再點顏色',
+    hlRemove: '移除標注',
+    hlSelectFirst: '請先在結果中選取要標注的程式碼',
     langBtn: 'English',
     docTitle: '程式碼去背工具',
   },
@@ -342,6 +383,34 @@ async function copyResult() {
     showStatus(ok ? t('copied') : t('copyFailed'));
   }
 }
+
+/* ---------- 標注 / Highlight ---------- */
+
+// 選取範圍必須落在結果區內才能標注
+function selectionInOutput() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  return output.contains(range.commonAncestorContainer);
+}
+
+function applyHighlight(color) {
+  if (!selectionInOutput()) {
+    showStatus(t('hlSelectFirst'));
+    return;
+  }
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('hiliteColor', false, color);
+}
+
+for (const btn of document.querySelectorAll('.swatch')) {
+  // mousedown 先擋掉，避免點按鈕時選取範圍被取消
+  btn.addEventListener('mousedown', e => e.preventDefault());
+  btn.addEventListener('click', () => applyHighlight(btn.dataset.color));
+}
+const hlRemoveBtn = document.getElementById('hlRemoveBtn');
+hlRemoveBtn.addEventListener('mousedown', e => e.preventDefault());
+hlRemoveBtn.addEventListener('click', () => applyHighlight('transparent'));
 
 document.getElementById('convertBtn').addEventListener('click', convert);
 document.getElementById('copyBtn').addEventListener('click', copyResult);
