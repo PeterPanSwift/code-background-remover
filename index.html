@@ -394,6 +394,25 @@ function selectionInOutput() {
   return output.contains(range.commonAncestorContainer);
 }
 
+// 找出文字節點屬於哪一「行」：VS Code 的 HTML 每行通常是一個 <div>，
+// 少數情況用 <br> 分行，所以行的識別 = 最近的區塊祖先 + 前面經過的 <br> 數
+function lineKeyOf(node) {
+  let block = node.parentElement;
+  while (block && block !== output && !/^(DIV|P|PRE|LI)$/i.test(block.tagName)) {
+    block = block.parentElement;
+  }
+  block = block || output;
+  let brCount = 0;
+  const w = document.createTreeWalker(block, NodeFilter.SHOW_ELEMENT);
+  while (w.nextNode()) {
+    if (w.currentNode.nodeName === 'BR') {
+      const pos = node.compareDocumentPosition(w.currentNode);
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) brCount++;
+    }
+  }
+  return { block, brCount };
+}
+
 function applyHighlight(color) {
   if (!selectionInOutput()) {
     showStatus(t('hlSelectFirst'));
@@ -413,25 +432,61 @@ function applyHighlight(color) {
     if (end > start) targets.push({ node, start, end });
   }
 
-  for (const { node, start, end } of targets) {
-    const text = node.nodeValue;
-    // 只標注去掉前後空白的部分：縮排、行尾空白、空行不加背景，
-    // 文字中間的空格維持連續標注
-    const [, leading, core, trailing] = text
-      .slice(start, end)
-      .match(/^(\s*)([\s\S]*?)(\s*)$/);
-    if (!core) continue;
+  // 依「行」把相鄰的文字節點分組
+  const groups = [];
+  let prevKey = null;
+  for (const target of targets) {
+    const key = lineKeyOf(target.node);
+    if (!prevKey || key.block !== prevKey.block || key.brCount !== prevKey.brCount) {
+      groups.push([]);
+    }
+    groups[groups.length - 1].push(target);
+    prevKey = key;
+  }
 
-    const frag = document.createDocumentFragment();
-    const pre = text.slice(0, start) + leading;
-    const post = trailing + text.slice(end);
-    if (pre) frag.appendChild(document.createTextNode(pre));
-    const span = document.createElement('span');
-    span.style.backgroundColor = color;
-    span.textContent = core;
-    frag.appendChild(span);
-    if (post) frag.appendChild(document.createTextNode(post));
-    node.parentNode.replaceChild(frag, node);
+  // 每行只標注「第一個非空白字元～最後一個非空白字元」：
+  // 縮排、行尾空白、空行不加背景；文字中間的空格連續標注
+  for (const group of groups) {
+    const T = group.map(g => g.node.nodeValue.slice(g.start, g.end)).join('');
+    // 文字節點內若還有換行（純文字貼上的情況），一併按行處理
+    const intervals = [];
+    let lineStart = 0;
+    for (const line of T.split('\n')) {
+      const first = line.search(/\S/);
+      if (first !== -1) {
+        const last = line.length - line.match(/\s*$/)[0].length;
+        intervals.push([lineStart + first, lineStart + last]);
+      }
+      lineStart += line.length + 1;
+    }
+    if (!intervals.length) continue;
+
+    let offset = 0;
+    for (const { node, start, end } of group) {
+      const len = end - start;
+      const ranges = [];
+      for (const [s, e] of intervals) {
+        const hs = Math.max(0, s - offset);
+        const he = Math.min(len, e - offset);
+        if (he > hs) ranges.push([start + hs, start + he]);
+      }
+      offset += len;
+      if (!ranges.length) continue;
+
+      const text = node.nodeValue;
+      const frag = document.createDocumentFragment();
+      let pos = 0;
+      for (const [a, b] of ranges) {
+        if (a > pos) frag.appendChild(document.createTextNode(text.slice(pos, a)));
+        const span = document.createElement('span');
+        span.style.backgroundColor = color;
+        span.textContent = text.slice(a, b);
+        frag.appendChild(span);
+        pos = b;
+      }
+      if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
+      node.parentNode.replaceChild(frag, node);
+    }
   }
   sel.removeAllRanges();
 }
