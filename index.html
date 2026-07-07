@@ -399,8 +399,55 @@ function applyHighlight(color) {
     showStatus(t('hlSelectFirst'));
     return;
   }
-  document.execCommand('styleWithCSS', false, true);
-  document.execCommand('hiliteColor', false, color);
+  const sel = window.getSelection();
+  const range = sel.getRangeAt(0);
+
+  // 先收集選取範圍內每個文字節點與被選到的區間（先收集完再改 DOM，避免位移）
+  const walker = document.createTreeWalker(output, NodeFilter.SHOW_TEXT);
+  const targets = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!range.intersectsNode(node)) continue;
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : node.nodeValue.length;
+    if (end > start) targets.push({ node, start, end });
+  }
+
+  for (const { node, start, end } of targets) {
+    const text = node.nodeValue;
+    // 只標注去掉前後空白的部分：縮排、行尾空白、空行不加背景，
+    // 文字中間的空格維持連續標注
+    const [, leading, core, trailing] = text
+      .slice(start, end)
+      .match(/^(\s*)([\s\S]*?)(\s*)$/);
+    if (!core) continue;
+
+    const frag = document.createDocumentFragment();
+    const pre = text.slice(0, start) + leading;
+    const post = trailing + text.slice(end);
+    if (pre) frag.appendChild(document.createTextNode(pre));
+    const span = document.createElement('span');
+    span.style.backgroundColor = color;
+    span.textContent = core;
+    frag.appendChild(span);
+    if (post) frag.appendChild(document.createTextNode(post));
+    node.parentNode.replaceChild(frag, node);
+  }
+  sel.removeAllRanges();
+}
+
+function removeHighlight() {
+  if (!selectionInOutput()) {
+    showStatus(t('hlSelectFirst'));
+    return;
+  }
+  const range = window.getSelection().getRangeAt(0);
+  for (const el of output.querySelectorAll('span')) {
+    if (el.style.backgroundColor && range.intersectsNode(el)) {
+      el.style.removeProperty('background-color');
+    }
+  }
+  window.getSelection().removeAllRanges();
 }
 
 for (const btn of document.querySelectorAll('.swatch')) {
@@ -410,7 +457,7 @@ for (const btn of document.querySelectorAll('.swatch')) {
 }
 const hlRemoveBtn = document.getElementById('hlRemoveBtn');
 hlRemoveBtn.addEventListener('mousedown', e => e.preventDefault());
-hlRemoveBtn.addEventListener('click', () => applyHighlight('transparent'));
+hlRemoveBtn.addEventListener('click', removeHighlight);
 
 document.getElementById('convertBtn').addEventListener('click', convert);
 document.getElementById('copyBtn').addEventListener('click', copyResult);
