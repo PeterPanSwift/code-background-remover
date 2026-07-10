@@ -372,7 +372,14 @@ async function copyResult() {
     ]);
     showStatus(t('copied'));
   } catch (e) {
-    // 後備方案：選取輸出區塊再用 execCommand 複製
+    // 後備方案：選取輸出區塊再用 execCommand 複製。
+    // 瀏覽器序列化選取內容時會把容器的背景色寫進複製結果，
+    // 所以先暫時把輸出區與所有祖先的背景設成透明，複製完再還原
+    const chain = [];
+    for (let el = output; el; el = el.parentElement) chain.push(el);
+    const saved = chain.map(el => el.style.backgroundColor);
+    for (const el of chain) el.style.backgroundColor = 'transparent';
+
     const range = document.createRange();
     range.selectNodeContents(output);
     const sel = window.getSelection();
@@ -380,6 +387,8 @@ async function copyResult() {
     sel.addRange(range);
     const ok = document.execCommand('copy');
     sel.removeAllRanges();
+
+    chain.forEach((el, i) => (el.style.backgroundColor = saved[i]));
     showStatus(ok ? t('copied') : t('copyFailed'));
   }
 }
