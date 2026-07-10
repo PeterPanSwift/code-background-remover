@@ -6,7 +6,8 @@ Paste syntax-highlighted code copied from VS Code, and convert it for pasting in
 - Darkens bright colors so they stay readable on a white background
 - White/gray text and brackets `{ } ( ) [ ]` become black
 - Highlight parts of the code with a marker-style background (yellow/green/blue/pink)
-- One-click copy, ready to paste into Keynote / PowerPoint / Google Slides
+- One-click copy, ready to paste into PowerPoint / Google Slides
+- "Copy as image" produces a transparent high-res PNG — use this for Keynote, which always draws a white box behind pasted rich text
 - Bilingual UI (English / 繁體中文), auto-detected from your system language
 
 把從 VS Code 複製的語法上色程式碼貼上，一鍵轉成適合貼到投影片的白底配色：
@@ -15,7 +16,8 @@ Paste syntax-highlighted code copied from VS Code, and convert it for pasting in
 - 太亮的顏色自動加深，白底上清楚可讀
 - 白色／灰色文字與括號 `{ } ( ) [ ]` 轉為黑色
 - 可選取程式碼加上螢光筆標注（黃／綠／藍／粉）
-- 一鍵複製，直接貼到 Keynote / PowerPoint / Google Slides
+- 一鍵複製，直接貼到 PowerPoint / Google Slides
+- 「複製為圖片」會產生透明背景的高解析度 PNG——貼到 Keynote 請用這個（Keynote 貼富文字時一定會加白底）
 - 中英雙語介面，依系統語言自動切換
 
 ## Usage 使用方式

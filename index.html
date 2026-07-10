@@ -97,6 +97,8 @@
   #convertBtn:hover { background: #1d4ed8; }
   #copyBtn { background: #059669; color: #fff; }
   #copyBtn:hover { background: #047857; }
+  #copyImgBtn { background: #7c3aed; color: #fff; }
+  #copyImgBtn:hover { background: #6d28d9; }
   #clearBtn { background: #e5e7eb; color: #374151; }
   #clearBtn:hover { background: #d1d5db; }
   #status { font-size: 14px; color: #059669; align-self: center; }
@@ -121,6 +123,7 @@
 <div class="buttons">
   <button id="convertBtn" data-i18n="convert">轉換成白底配色</button>
   <button id="copyBtn" data-i18n="copy">複製結果</button>
+  <button id="copyImgBtn" data-i18n="copyImg">複製為圖片</button>
   <button id="clearBtn" data-i18n="clear">清除</button>
   <span id="status"></span>
 </div>
@@ -139,7 +142,7 @@
 </div>
 
 <script>
-const APP_VERSION = 'v1.7.0';
+const APP_VERSION = 'v1.8.0';
 document.getElementById('version').textContent = APP_VERSION;
 
 const input = document.getElementById('input');
@@ -151,7 +154,7 @@ const status = document.getElementById('status');
 const I18N = {
   en: {
     title: 'Code Background Remover',
-    hint: 'Copy code from VS Code → paste below → click "Convert" → click "Copy result" → paste into your slides. The background is removed and bright colors are darkened for a white background.',
+    hint: 'Copy code from VS Code → paste below → click "Convert" → copy → paste into your slides. The background is removed and bright colors are darkened for a white background. For Keynote, use "Copy as image" — Keynote adds a white box behind pasted rich text.',
     step1: '1. Paste your code (formatting preserved)',
     step2: '2. Result (white background preview)',
     convert: 'Convert for white background',
@@ -164,6 +167,9 @@ const I18N = {
     nothingToCopy: 'Nothing to copy',
     copied: 'Copied — ready to paste into your slides ✓',
     copyFailed: 'Copy failed — please select and copy manually',
+    copyImg: 'Copy as image',
+    copiedImg: 'Image copied — paste it into Keynote ✓',
+    imgDownloaded: 'Clipboard unavailable — PNG downloaded instead',
     hlLabel: 'Highlight: select code below, then click a color',
     hlRemove: 'Remove highlight',
     hlSelectFirst: 'Select some code in the result first',
@@ -172,7 +178,7 @@ const I18N = {
   },
   zh: {
     title: '程式碼去背工具',
-    hint: '從 VS Code 複製程式碼 → 貼到下方 → 按「轉換」→ 按「複製結果」→ 貼到投影片。背景會被移除，太亮的顏色會自動加深，適合白色背景。',
+    hint: '從 VS Code 複製程式碼 → 貼到下方 → 按「轉換」→ 複製 → 貼到投影片。背景會被移除，太亮的顏色會自動加深，適合白色背景。貼到 Keynote 請用「複製為圖片」——Keynote 會替貼上的文字加白底。',
     step1: '1. 貼上程式碼（保留格式）',
     step2: '2. 轉換結果（白色背景預覽）',
     convert: '轉換成白底配色',
@@ -185,6 +191,9 @@ const I18N = {
     nothingToCopy: '沒有可複製的內容',
     copied: '已複製，可以貼到投影片了 ✓',
     copyFailed: '複製失敗，請手動選取複製',
+    copyImg: '複製為圖片',
+    copiedImg: '已複製圖片，貼到 Keynote 即可 ✓',
+    imgDownloaded: '無法寫入剪貼簿，已改為下載 PNG',
     hlLabel: '標注：選取下方程式碼，再點顏色',
     hlRemove: '移除標注',
     hlSelectFirst: '請先在結果中選取要標注的程式碼',
@@ -400,6 +409,123 @@ async function copyResult() {
     showStatus(ok ? t('copied') : t('copyFailed'));
   }
 }
+
+/* ---------- 複製為圖片 / Copy as image ----------
+   Keynote 匯入 HTML 時一定會把頁面底色（白色）當成每段文字的背景，
+   任何 HTML 都躲不掉，所以提供透明背景的 PNG 給 Keynote 使用者。 */
+
+// 把結果區的內容整理成「行」，每行是一串 {text, color, bg} 片段
+function collectLines() {
+  const lines = [];
+  let current = [];
+  const flush = () => {
+    lines.push(current);
+    current = [];
+  };
+  const walk = (node, color, bg) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parts = node.nodeValue.split('\n');
+      parts.forEach((p, i) => {
+        if (i > 0) flush();
+        if (p) current.push({ text: p, color, bg });
+      });
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.tagName === 'BR') {
+      flush();
+      return;
+    }
+    const c = node.style && node.style.color ? node.style.color : color;
+    const rawBg = node.style ? node.style.backgroundColor : '';
+    const b = rawBg && rawBg !== 'transparent' ? rawBg : bg;
+    const isBlock = /^(DIV|P|PRE)$/.test(node.tagName);
+    let startCount = 0;
+    if (isBlock) {
+      if (current.length) flush();
+      startCount = lines.length;
+    }
+    for (const child of node.childNodes) walk(child, c, b);
+    if (isBlock) {
+      if (current.length) flush();
+      else if (lines.length === startCount) flush(); // 空的 div = 空行
+    }
+  };
+  walk(output, output.style.color || '#24292f', null);
+  if (current.length) flush();
+  // 去掉開頭與結尾的空行
+  while (lines.length && !lines[0].length) lines.shift();
+  while (lines.length && !lines[lines.length - 1].length) lines.pop();
+  return lines;
+}
+
+function renderOutputToCanvas() {
+  const lines = collectLines();
+  const scale = 3; // 高解析度，投影時清晰
+  const fontSize = 13 * scale;
+  const lineH = Math.round(fontSize * 1.5);
+  const pad = 8 * scale;
+  const font = fontSize + 'px "SF Mono", Menlo, Consolas, monospace';
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+  let maxW = 0;
+  for (const line of lines) {
+    let w = 0;
+    for (const run of line) w += ctx.measureText(run.text).width;
+    maxW = Math.max(maxW, w);
+  }
+  canvas.width = Math.ceil(maxW) + pad * 2;
+  canvas.height = lines.length * lineH + pad * 2;
+
+  // 背景保持透明，只畫文字與標注
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  lines.forEach((line, i) => {
+    const y = pad + i * lineH;
+    let x = pad;
+    // 先畫標注背景，讓相鄰片段無縫相連
+    let bx = x;
+    for (const run of line) {
+      const w = ctx.measureText(run.text).width;
+      if (run.bg) {
+        ctx.fillStyle = run.bg;
+        ctx.fillRect(bx, y, Math.ceil(w) + 1, lineH);
+      }
+      bx += w;
+    }
+    for (const run of line) {
+      const w = ctx.measureText(run.text).width;
+      ctx.fillStyle = run.color || '#24292f';
+      ctx.fillText(run.text, x, y + lineH / 2);
+      x += w;
+    }
+  });
+  return canvas;
+}
+
+function copyAsImage() {
+  if (!output.innerHTML.trim()) {
+    showStatus(t('nothingToCopy'));
+    return;
+  }
+  const canvas = renderOutputToCanvas();
+  const blobPromise = new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  // Safari 要求在使用者手勢的同步階段就呼叫 clipboard.write，所以傳入 Promise
+  navigator.clipboard
+    .write([new ClipboardItem({ 'image/png': blobPromise })])
+    .then(() => showStatus(t('copiedImg')))
+    .catch(() => {
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = 'code.png';
+      a.click();
+      showStatus(t('imgDownloaded'));
+    });
+}
+
+document.getElementById('copyImgBtn').addEventListener('click', copyAsImage);
 
 /* ---------- 標注 / Highlight ---------- */
 
